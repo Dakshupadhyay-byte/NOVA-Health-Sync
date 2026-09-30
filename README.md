@@ -1,98 +1,531 @@
-# NOVA Health Sync
+#  NOVA Health Connect
 
-An Android app that forwards health data from Google Fit, Samsung Health, Fitbit,
-and other apps to your NOVA Wellness platform, custom webhooks, or local tools via Health Connect.
+> **A dedicated Android Health Connect synchronization app for the NOVA wellness ecosystem.**
 
-<table role="presentation" border="0" cellspacing="0" cellpadding="0">
-  <tr>
-    <td valign="middle"><a href="https://play.google.com/store/apps/details?id=com.hcwebhook.app"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="90"></a></td>
-    <td valign="middle">&nbsp;&nbsp;</td>
-    <td valign="middle"><a href="https://apps.apple.com/app/health-webhook/id6763619597"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" height="60"></a></td>
-  </tr>
-</table>
+NOVA Health Connect is the Android-side data synchronization layer of **NOVA**, designed to securely access health and fitness data through **Android Health Connect** and synchronize it with the NOVA backend.
 
-**Get it from the [Google Play Store](https://play.google.com/store/apps/details?id=com.hcwebhook.app) or the [App Store](https://apps.apple.com/app/health-webhook/id6763619597).**
+It acts as a bridge between health applications available on a user's Android device and the NOVA wellness platform.
 
-![NOVA Health Sync](image.png)
+---
 
-## How it works
+##  About NOVA
 
-1. Your health apps sync to **Health Connect**, which aggregates them into one API.
-2. **NOVA Health Sync** reads that data on an interval, on a schedule, or on demand.
-3. It `POST`s the data to your webhook URLs (JSON or Protobuf/gRPC) and can serve
-   realtime JSON over your local network.
-4. Your services, agents, or automation tools receive it.
+**NOVA** is an AI-powered wellness and focus platform that transforms health and activity data into personalized insights and recommendations.
 
-## Screenshots
+NOVA Health Connect handles the Android-side health data pipeline:
 
-| Home | Data Types | Webhook URLs | Logs |
-| :--: | :--: | :--: | :--: |
-| <img src="screenshots/1.png" width="200" alt="Home"> | <img src="screenshots/2.png" width="200" alt="Data Types"> | <img src="screenshots/3.png" width="200" alt="Webhook URLs"> | <img src="screenshots/4.png" width="200" alt="Logs"> |
+```text
+Health & Fitness Apps
+        ↓
+   Android Health Connect
+        ↓
+   NOVA Health Connect
+        ↓
+      NOVA API
+        ↓
+     Database
+        ↓
+    NOVA Platform
+```
 
-## Features
+---
 
-Interval or scheduled sync · 31 health data types · multiple webhooks · JSON or
-Protobuf/gRPC delivery · local HTTP server · webhook logs · settings
-backup/restore · 10 languages. Full list, supported apps, and data types:
-**[docs/features.md](docs/features.md)**.
+# ✨ Key Features
 
-## Install
+### 🔄 Health Data Synchronization
 
-### Stable (recommended)
+Reads supported health metrics from Android Health Connect and synchronizes them with the NOVA backend.
 
-Store builds — tested releases, long-term support:
+### 🔐 Health Connect Permissions
 
-<table role="presentation" border="0" cellspacing="0" cellpadding="0">
-  <tr>
-    <td valign="middle"><a href="https://play.google.com/store/apps/details?id=com.hcwebhook.app"><img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" height="90"></a></td>
-    <td valign="middle">&nbsp;&nbsp;</td>
-    <td valign="middle"><a href="https://apps.apple.com/app/health-webhook/id6763619597"><img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83" alt="Download on the App Store" height="60"></a></td>
-  </tr>
-</table>
+Uses Android Health Connect's permission system to request access to supported health records.
 
-### Beta (rolling release)
+Users remain in control of which health data the application can access.
 
-Android APKs straight from GitHub Releases via
-[Obtainium](https://github.com/ImranR98/Obtainium) — newest features first, more
-churn. Add app URL: `https://github.com/mcnaveen/health-connect-webhook`.
+### 📊 Health Metrics
 
-## Requirements
+The synchronization architecture can work with health and activity information such as:
 
-- Android 8.0 (API 26) or higher
-- Google Health Connect installed and set up
-- Internet connection for webhook delivery
+* 💤 Sleep
+* 🚶 Steps
+* ❤️ Heart rate
+* 🏃 Physical activity
+* 🔥 Calories
+* ⚖️ Other supported Health Connect records
 
-## Documentation
+The exact records available depend on the permissions granted and the data provided by the user's connected health applications.
 
-| Doc | Covers |
-| --- | --- |
-| [docs/features.md](docs/features.md) | Full feature list, supported apps, languages, data types |
-| [docs/usage.md](docs/usage.md) | Setup, sync modes, local server, feedback, limitations |
-| [docs/api-reference.md](docs/api-reference.md) | Payload schema, webhook / gRPC delivery, local HTTP server |
-| [docs/webhook.md](docs/webhook.md) | Full field tables, units, examples |
-| [docs/local-http.md](docs/local-http.md) | Local HTTP `GET` API |
-| [docs/building.md](docs/building.md) | Build, project structure, architecture, contributing |
+### ☁️ Backend Synchronization
 
-## Privacy
+Collected health information is sent to the NOVA backend, where it can be stored and used by the main NOVA application.
 
-Health data stays on your device until sent to your configured webhooks. Nothing
-goes to third parties. You control which data types sync and where. Revoke
-permissions any time in Android settings.
+### 🔁 Background Synchronization
 
-## License
+The application is designed to support background synchronization so health information can be periodically updated without requiring the user to manually trigger every sync.
 
-[AGPL-3.0-only](https://www.gnu.org/licenses/agpl-3.0.html) — see [LICENSE](LICENSE).
-Commercial redistribution on the App Store or Google Play requires a separate
-commercial license; see [LICENSE.ADDENDUM](LICENSE.ADDENDUM).
+### 🛡️ Permission-Based Access
 
-## Support
+NOVA Health Connect does not bypass Android's health-data permission system.
 
-- [Open an issue](https://github.com/mcnaveen/health-connect-webhook/issues)
-- In-app: **About** → **Provide Feedback**
-- Feature board: [hc-webhook.feedbackjar.com](https://hc-webhook.feedbackjar.com/)
+Health data is accessed only through the permissions granted by the user.
 
-## Acknowledgments
+---
 
-Built with [Health Connect](https://developer.android.com/guide/health-and-fitness/health-connect),
-[Jetpack Compose](https://developer.android.com/jetpack/compose), and
-[WorkManager](https://developer.android.com/topic/libraries/architecture/workmanager).
+# 🏗️ Architecture
+
+```text
+┌──────────────────────────────┐
+│       Health Apps            │
+│                              │
+│ Google Fit / Samsung Health  │
+│ Other Compatible Apps        │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│     Android Health Connect   │
+│                              │
+│ Standardized Health Records  │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│    NOVA Health Connect App   │
+│                              │
+│ HealthConnectManager         │
+│ HealthSyncManager            │
+│ HealthSyncWorker             │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│        NOVA Backend          │
+│                              │
+│ REST APIs / Data Processing  │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│         PostgreSQL           │
+│                              │
+│ User Health Data             │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│        NOVA Platform         │
+│                              │
+│ Dashboard + AI Insights      │
+└──────────────────────────────┘
+```
+
+---
+
+# 🧩 How It Works
+
+## 1. User Grants Permissions
+
+The user installs NOVA Health Connect and grants the required Health Connect permissions.
+
+```text
+User
+ ↓
+Health Connect Permission Screen
+ ↓
+Grant Selected Permissions
+```
+
+---
+
+## 2. Health Data Is Read
+
+The application communicates with Android Health Connect and retrieves the permitted health records.
+
+```text
+HealthConnectManager
+        ↓
+Health Connect API
+        ↓
+Health Records
+```
+
+---
+
+## 3. Data Is Processed
+
+The retrieved records are converted into NOVA's internal data models.
+
+This provides a consistent format before the data is sent to the backend.
+
+```text
+Health Connect Records
+        ↓
+NOVA Data Models
+        ↓
+Validation / Processing
+```
+
+---
+
+## 4. Data Is Synchronized
+
+Processed health information is sent to the NOVA backend.
+
+```text
+Android App
+     ↓
+NOVA API
+     ↓
+PostgreSQL
+```
+
+---
+
+## 5. NOVA Uses the Data
+
+The main NOVA platform can then use the synchronized information to generate:
+
+* Wellness insights
+* Activity summaries
+* Sleep analysis
+* Personalized recommendations
+* Focus-related insights
+
+---
+
+# 🛠️ Tech Stack
+
+| Technology         | Purpose                    |
+| ------------------ | -------------------------- |
+| **Kotlin**         | Android development        |
+| **Android SDK**    | Application framework      |
+| **Health Connect** | Health data access         |
+| **WorkManager**    | Background synchronization |
+| **REST API**       | Backend communication      |
+| **PostgreSQL**     | Health data storage        |
+| **GitHub**         | Version control            |
+
+---
+
+# 📁 Project Structure
+
+```text
+NOVA-Health-Connect/
+│
+├── app/
+│   └── src/
+│       └── main/
+│           ├── java/
+│           │   └── ...
+│           │
+│           ├── res/
+│           │   └── ...
+│           │
+│           └── AndroidManifest.xml
+│
+├── build.gradle
+├── settings.gradle
+├── gradle.properties
+└── README.md
+```
+
+### Important Components
+
+```text
+HealthConnectManager
+        │
+        ├── Health Connect permissions
+        ├── Read health records
+        └── Health data operations
+                │
+                ▼
+HealthSyncManager
+        │
+        ├── Process records
+        ├── Prepare sync payload
+        └── Communicate with backend
+                │
+                ▼
+HealthSyncWorker
+        │
+        └── Background synchronization
+```
+
+---
+
+# ⚙️ Setup
+
+## Prerequisites
+
+Before running the application, make sure you have:
+
+* Android Studio
+* Android SDK
+* Kotlin support
+* An Android device/emulator supporting Health Connect
+* Health Connect installed and configured
+* A running NOVA backend
+
+---
+
+## 1. Clone the Repository
+
+```bash
+git clone <YOUR_HEALTH_CONNECT_REPOSITORY_URL>
+```
+
+```bash
+cd <YOUR_HEALTH_CONNECT_REPOSITORY>
+```
+
+---
+
+## 2. Open in Android Studio
+
+Open the cloned project using Android Studio.
+
+Allow Gradle to synchronize and install the required dependencies.
+
+---
+
+## 3. Configure Backend
+
+Configure the backend/API endpoint used by the application.
+
+For example:
+
+```text
+NOVA_API_URL=https://your-backend-url
+```
+
+> Do not commit private API keys, tokens, passwords, or other secrets to GitHub.
+
+---
+
+## 4. Build the Application
+
+From Android Studio:
+
+```text
+Build → Make Project
+```
+
+or use:
+
+```bash
+./gradlew build
+```
+
+---
+
+## 5. Run on an Android Device
+
+Connect a compatible Android device and run the application from Android Studio.
+
+After installation:
+
+1. Open NOVA Health Connect
+2. Grant the requested Health Connect permissions
+3. Ensure health data exists in Health Connect
+4. Start synchronization
+5. Verify the synchronized data through the NOVA backend/dashboard
+
+---
+
+# 🔐 Health Connect Permissions
+
+NOVA Health Connect uses Android Health Connect's permission model.
+
+The application should request only the health records required by NOVA.
+
+Typical permissions may include access to records such as:
+
+```text
+Steps
+Sleep
+Heart Rate
+Active Calories Burned
+Distance
+Exercise Sessions
+```
+
+The actual permissions depend on the health metrics implemented in the application.
+
+Users can manage Health Connect permissions through Android's Health Connect settings.
+
+---
+
+# 🔄 Synchronization Flow
+
+```text
+┌───────────────┐
+│ Health Apps   │
+└───────┬───────┘
+        │
+        ▼
+┌──────────────────┐
+│ Health Connect   │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────┐
+│ HealthConnectManager │
+└──────────┬───────────┘
+           │
+           ▼
+┌────────────────────┐
+│ HealthSyncManager  │
+└─────────┬──────────┘
+          │
+          ▼
+┌────────────────────┐
+│ HealthSyncWorker   │
+└─────────┬──────────┘
+          │
+          ▼
+┌────────────────────┐
+│    NOVA Backend    │
+└─────────┬──────────┘
+          │
+          ▼
+┌────────────────────┐
+│    PostgreSQL      │
+└────────────────────┘
+```
+
+---
+
+# 🧠 Why a Separate Health Connect App?
+
+NOVA Health Connect is maintained as a separate Android application so that the health-data integration layer remains independent from the main NOVA web application.
+
+This provides:
+
+* Clear separation of responsibilities
+* Native Android Health Connect integration
+* Easier maintenance
+* Independent development and deployment
+* Background synchronization capabilities
+* A dedicated security boundary for health-data access
+
+---
+
+# 🔒 Privacy
+
+Health information is sensitive data.
+
+NOVA Health Connect follows a permission-based approach:
+
+* Health Connect controls access to health records.
+* The application requests only required permissions.
+* Users can revoke permissions.
+* Backend communication should use secure HTTPS connections.
+* Sensitive credentials should be stored outside source control.
+* Health data should not be logged unnecessarily.
+
+NOVA Health Connect is intended to support wellness applications and **does not provide medical diagnosis or treatment**.
+
+---
+
+# 🚀 Future Improvements
+
+Planned or potential improvements include:
+
+* 🔄 More Health Connect record types
+* ⚡ Improved synchronization reliability
+* 📡 Better offline synchronization
+* 🔁 Automatic retry for failed uploads
+* 📊 Improved sync status monitoring
+* 🔐 Enhanced authentication
+* 🧹 Duplicate-data prevention
+* 📈 Historical health-data synchronization
+* ⚙️ More configurable background sync
+* 🩺 Additional wearable/device integrations
+
+---
+
+# 🌌 NOVA Ecosystem
+
+NOVA Health Connect is one component of the larger NOVA ecosystem.
+
+```text
+                 ┌─────────────────────┐
+                 │  Health / Wearable  │
+                 │       Apps          │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │  NOVA Health        │
+                 │     Connect         │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │    NOVA Backend     │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │    PostgreSQL       │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │    NOVA Web App     │
+                 │                     │
+                 │ AI + Insights +     │
+                 │ Recommendations     │
+                 └─────────────────────┘
+```
+
+---
+
+# 👨‍💻 Team
+
+Built by **Team NOVA**:
+
+| Member             |
+| ------------------ |
+| **Daksh Upadhyay** |
+| **Divyansh Gupta** |
+| **Dipanshu Shah**  |
+| **Ayush Agrawal**  |
+
+---
+
+# 🔗 NOVA
+
+### Main NOVA Platform
+
+https://nova-omega-sable.vercel.app/
+
+### Main NOVA Repository
+
+https://github.com/NOVA-Wellness/Nova
+
+---
+
+## ⭐ Contributing
+
+This project is currently developed as part of the NOVA ecosystem.
+
+For major changes, discuss the proposed architecture or implementation with the team before submitting changes.
+
+---
+
+## 📜 License
+
+Add your project's chosen license here.
+
+For example:
+
+```text
+MIT License
+```
+
+---
+
+# 🌌 NOVA Health Connect
+
+**Connecting your health data to a more personalized wellness experience.**
