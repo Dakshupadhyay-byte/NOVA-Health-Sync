@@ -1,0 +1,1001 @@
+package com.hcwebhook.app.screens
+
+import android.widget.Toast
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import com.hcwebhook.app.R
+import com.hcwebhook.app.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun WebhooksScreen(onOpenNotificationsSettings: () -> Unit = {}) {
+    val context = LocalContext.current
+    val preferencesManager = remember { PreferencesManager(context) }
+    val globalEnabledTypes = remember { preferencesManager.getEnabledDataTypes().map { it.name }.toSet() }
+    var globalNotificationConfigs by remember { mutableStateOf(preferencesManager.getNotificationConfigs()) }
+    val appVersion = remember {
+        try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown" }
+        catch (_: Exception) { "unknown" }
+    }
+
+    var webhookConfigs by remember { mutableStateOf(preferencesManager.getWebhookConfigs()) }
+    var newUrl by remember { mutableStateOf("") }
+    var sheetIndex by remember { mutableStateOf(-1) }
+    val showSheet = sheetIndex >= 0 && sheetIndex in webhookConfigs.indices
+
+    var showNovaDialog by remember { mutableStateOf(false) }
+    var novaToken by remember { mutableStateOf("") }
+
+    LaunchedEffect(webhookConfigs) {
+        preferencesManager.setWebhookConfigs(webhookConfigs)
+    }
+
+    // ── NOVA Connection Dialog ───────────────────────────────────────────────
+    if (showNovaDialog) {
+        val trimmedToken = novaToken.trim()
+        val isTokenValid = trimmedToken.startsWith("nova_hk_")
+
+        AlertDialog(
+            onDismissRequest = {
+                showNovaDialog = false
+                novaToken = ""
+            },
+            title = {
+                Text("Connect to NOVA")
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Enter your NOVA Health Webhook Token. It should start with nova_hk_.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = novaToken,
+                        onValueChange = { novaToken = it },
+                        label = { Text("NOVA Webhook Token") },
+                        placeholder = { Text("nova_hk_...") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val token = novaToken.trim()
+                        if (token.startsWith("nova_hk_")) {
+                            val newConfig = WebhookConfig(
+                                url = "https://nova-backend-eta.vercel.app/api/health/webhook",
+                                name = "NOVA",
+                                headers = mapOf(
+                                    "Authorization" to "Bearer $token"
+                                ),
+                                isEnabled = true,
+                                dataTypeFilter = null,
+                                deliveryFormat = WebhookDeliveryFormat.JSON
+                            )
+                            val filteredConfigs = webhookConfigs.filterNot { config ->
+                                config.url == "https://nova-backend-eta.vercel.app/api/health/webhook" ||
+                                config.name.equals("NOVA", ignoreCase = true)
+                            }
+                            val updatedConfigs = filteredConfigs + newConfig
+                            webhookConfigs = updatedConfigs
+                            preferencesManager.setWebhookConfigs(updatedConfigs)
+                            showNovaDialog = false
+                            novaToken = ""
+                            Toast.makeText(context, "NOVA connected successfully.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Invalid NOVA webhook token.", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = isTokenValid
+                ) {
+                    Text("Connect")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showNovaDialog = false
+                        novaToken = ""
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // ── Edit Bottom Sheet ─────────────────────────────────────────────────────
+    if (showSheet) {
+        val config = webhookConfigs[sheetIndex]
+        val capturedIndex = sheetIndex
+
+        var editName by remember(capturedIndex) { mutableStateOf(config.name) }
+        var editUrl by remember(capturedIndex) { mutableStateOf(config.url) }
+        var editDeliveryFormat by remember(capturedIndex) { mutableStateOf(config.deliveryFormat) }
+        var currentHeaders by remember(capturedIndex) { mutableStateOf(config.headers) }
+        var manageHeaders by remember(capturedIndex) { mutableStateOf(config.headers.isNotEmpty()) }
+        var newKey by remember(capturedIndex) { mutableStateOf("") }
+        var newValue by remember(capturedIndex) { mutableStateOf("") }
+        var jsonPaste by remember(capturedIndex) { mutableStateOf("") }
+        var headerTab by remember(capturedIndex) { mutableIntStateOf(0) } // 0=Form, 1=JSON
+        var filterAll by remember(capturedIndex) { mutableStateOf(config.dataTypeFilter == null) }
+        var selectedTypes by remember(capturedIndex) {
+            mutableStateOf(config.dataTypeFilter ?: globalEnabledTypes)
+        }
+        var selectedNotificationIds by remember(capturedIndex) { mutableStateOf(config.notificationConfigIds) }
+        var showDeleteConfirm by remember(capturedIndex) { mutableStateOf(false) }
+        var testLoading by remember(capturedIndex) { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+
+        LaunchedEffect(capturedIndex) {
+            globalNotificationConfigs = preferencesManager.getNotificationConfigs()
+        }
+
+        val existingNotifIds = globalNotificationConfigs.map { it.id }.toSet()
+        val enabledNotifConfigs = globalNotificationConfigs.filter { it.isEnabled }
+        val enabledNotifIds = enabledNotifConfigs.map { it.id }.toSet()
+        val orphanedIds = selectedNotificationIds - existingNotifIds
+        var showUnlinkConfirm by remember(capturedIndex) { mutableStateOf(false) }
+
+        LaunchedEffect(orphanedIds) {
+            if (orphanedIds.isNotEmpty()) showUnlinkConfirm = true
+        }
+
+        val hasUnsavedChanges by remember(editName, editUrl, editDeliveryFormat, currentHeaders, filterAll, selectedTypes, selectedNotificationIds) {
+            derivedStateOf {
+                editName.trim() != config.name ||
+                editUrl.trim() != config.url ||
+                editDeliveryFormat != config.deliveryFormat ||
+                currentHeaders != config.headers ||
+                filterAll != (config.dataTypeFilter == null) ||
+                (!filterAll && selectedTypes != (config.dataTypeFilter ?: globalEnabledTypes)) ||
+                selectedNotificationIds != config.notificationConfigIds
+            }
+        }
+
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        ModalBottomSheet(
+            onDismissRequest = { sheetIndex = -1 },
+            sheetState = sheetState,
+            dragHandle = { BottomSheetDefaults.DragHandle() },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 36.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.webhooks_edit_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (hasUnsavedChanges) {
+                            Text(
+                                stringResource(R.string.webhooks_unsaved_changes),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Text(
+                                if (config.isEnabled) stringResource(R.string.webhooks_status_active)
+                                else stringResource(R.string.webhooks_status_disabled),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (config.isEnabled) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = config.isEnabled,
+                        onCheckedChange = { enabled ->
+                            val list = webhookConfigs.toMutableList()
+                            list[capturedIndex] = config.copy(isEnabled = enabled)
+                            webhookConfigs = list
+                        }
+                    )
+                }
+
+                // ── Name / URL edit ───────────────────────────────────────────
+                OutlinedTextField(
+                    value = editName,
+                    onValueChange = { editName = it },
+                    label = { Text("Label (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    placeholder = { Text("e.g. Home Assistant", style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))) }
+                )
+                OutlinedTextField(
+                    value = editUrl,
+                    onValueChange = { editUrl = it },
+                    label = {
+                        Text(
+                            if (editDeliveryFormat == WebhookDeliveryFormat.GRPC)
+                                stringResource(R.string.webhooks_url_label_grpc)
+                            else
+                                stringResource(R.string.webhooks_url_label_json)
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    isError = editUrl.isNotBlank() && !isWebhookTargetValid(editUrl, editDeliveryFormat),
+                    supportingText = if (editDeliveryFormat == WebhookDeliveryFormat.GRPC) {
+                        { Text(stringResource(R.string.webhooks_delivery_grpc_hint)) }
+                    } else null
+                )
+
+                // ── Delivery format ───────────────────────────────────────────
+                SheetSection {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            stringResource(R.string.webhooks_delivery_section),
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = editDeliveryFormat == WebhookDeliveryFormat.JSON,
+                                onClick = { editDeliveryFormat = WebhookDeliveryFormat.JSON },
+                                label = { Text(stringResource(R.string.webhooks_delivery_json)) }
+                            )
+                            FilterChip(
+                                selected = editDeliveryFormat == WebhookDeliveryFormat.GRPC,
+                                onClick = { editDeliveryFormat = WebhookDeliveryFormat.GRPC },
+                                label = { Text(stringResource(R.string.webhooks_delivery_grpc)) }
+                            )
+                        }
+                        if (editDeliveryFormat == WebhookDeliveryFormat.GRPC) {
+                            TextButton(
+                                onClick = {
+                                    try {
+                                        ProtoSchemaExporter.share(context)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(
+                                                R.string.webhooks_delivery_share_proto_failed,
+                                                e.message ?: context.getString(R.string.about_error_unknown)
+                                            ),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.webhooks_delivery_share_proto))
+                            }
+                        }
+                    }
+                }
+
+                // ── Data Types ───────────────────────────────────────────────
+                SheetSection {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.FilterList,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                stringResource(R.string.webhooks_data_types_section),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                stringResource(R.string.webhooks_data_types_send_all),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Switch(
+                                checked = filterAll,
+                                onCheckedChange = { all ->
+                                    filterAll = all
+                                    if (all) selectedTypes = globalEnabledTypes
+                                }
+                            )
+                        }
+
+                        if (!filterAll) {
+                            if (globalEnabledTypes.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.webhooks_data_types_none_global),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    globalEnabledTypes.sorted().forEach { typeName ->
+                                        val label = typeName.replace('_', ' ').lowercase()
+                                            .replaceFirstChar { it.uppercase() }
+                                        FilterChip(
+                                            selected = typeName in selectedTypes,
+                                            onClick = {
+                                                selectedTypes = if (typeName in selectedTypes)
+                                                    selectedTypes - typeName
+                                                else
+                                                    selectedTypes + typeName
+                                            },
+                                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                            leadingIcon = if (typeName in selectedTypes) {
+                                                { Icon(Icons.Filled.Check, null, Modifier.size(14.dp)) }
+                                            } else null
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Headers ───────────────────────────────────────────────────
+                SheetSection {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.List,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    stringResource(R.string.webhooks_headers_manage_title),
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                            }
+                            Switch(
+                                checked = manageHeaders,
+                                onCheckedChange = { enabled -> 
+                                    manageHeaders = enabled
+                                    if (!enabled) currentHeaders = emptyMap()
+                                }
+                            )
+                        }
+
+                        if (manageHeaders) {
+                            if (currentHeaders.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.webhooks_headers_empty),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontStyle = FontStyle.Italic,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                currentHeaders.forEach { (key, value) ->
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(key, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                Text(value, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            IconButton(
+                                                onClick = { currentHeaders = currentHeaders - key },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Close,
+                                                    contentDescription = stringResource(R.string.webhooks_headers_action_remove),
+                                                    modifier = Modifier.size(16.dp),
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            TabRow(
+                                selectedTabIndex = headerTab,
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0f)
+                            ) {
+                                Tab(selected = headerTab == 0, onClick = { headerTab = 0 }) {
+                                    Text(
+                                        stringResource(R.string.webhooks_headers_tab_form),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        modifier = Modifier.padding(vertical = 10.dp)
+                                    )
+                                }
+                                Tab(selected = headerTab == 1, onClick = { headerTab = 1 }) {
+                                    Text(
+                                        stringResource(R.string.webhooks_headers_tab_json),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        modifier = Modifier.padding(vertical = 10.dp)
+                                    )
+                                }
+                            }
+
+                            if (headerTab == 0) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = newKey,
+                                        onValueChange = { newKey = it },
+                                        label = { Text(stringResource(R.string.webhooks_headers_key_label)) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodySmall
+                                    )
+                                    OutlinedTextField(
+                                        value = newValue,
+                                        onValueChange = { newValue = it },
+                                        label = { Text(stringResource(R.string.webhooks_headers_value_label)) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        if (newKey.isNotBlank() && newValue.isNotBlank()) {
+                                            currentHeaders = currentHeaders + (newKey.trim() to newValue.trim())
+                                            newKey = ""
+                                            newValue = ""
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(stringResource(R.string.webhooks_headers_action_add_title))
+                                }
+                            } else {
+                                OutlinedTextField(
+                                    value = jsonPaste,
+                                    onValueChange = { jsonPaste = it },
+                                    label = { Text(stringResource(R.string.webhooks_headers_json_label)) },
+                                    placeholder = { Text("{\"Authorization\": \"Bearer token\"}", style = MaterialTheme.typography.bodySmall) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    minLines = 3,
+                                    maxLines = 6,
+                                    textStyle = MaterialTheme.typography.bodySmall
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            val obj = JSONObject(jsonPaste.trim())
+                                            val parsed = mutableMapOf<String, String>()
+                                            obj.keys().forEach { key -> parsed[key] = obj.getString(key) }
+                                            currentHeaders = currentHeaders + parsed
+                                            jsonPaste = ""
+                                            headerTab = 0
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, context.getString(R.string.webhooks_headers_json_error), Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(stringResource(R.string.webhooks_headers_json_apply))
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SheetSection {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Notifications,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                stringResource(R.string.webhooks_notification_section),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                        }
+                        var expanded by remember { mutableStateOf(false) }
+                        ExposedDropdownMenuBox(
+                            expanded = expanded,
+                            onExpandedChange = { expanded = !expanded }
+                        ) {
+                            val validSelectedIds = selectedNotificationIds intersect enabledNotifIds
+                            val selectedCount = validSelectedIds.size
+                            val selectedName = if (selectedCount == 0) {
+                                stringResource(R.string.webhooks_notification_none)
+                            } else if (selectedCount == 1) {
+                                enabledNotifConfigs.find { it.id == validSelectedIds.first() }?.let {
+                                    "${it.providerType.displayName} (${it.displayIdentifier})"
+                                } ?: "$selectedCount selected"
+                            } else {
+                                "$selectedCount providers selected"
+                            }
+
+                            OutlinedTextField(
+                                value = selectedName,
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                modifier = Modifier.fillMaxWidth().menuAnchor(),
+                                textStyle = MaterialTheme.typography.bodySmall
+                            )
+
+                            ExposedDropdownMenu(
+                                expanded = expanded,
+                                onDismissRequest = { expanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Add New Provider...") },
+                                    leadingIcon = { Icon(Icons.Filled.Add, null, Modifier.size(16.dp)) },
+                                    onClick = {
+                                        expanded = false
+                                        onOpenNotificationsSettings()
+                                    }
+                                )
+                                HorizontalDivider()
+                                
+                                if (enabledNotifConfigs.isEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("No providers configured", fontStyle = FontStyle.Italic) },
+                                        onClick = { expanded = false }
+                                    )
+                                } else {
+                                    enabledNotifConfigs.forEach { notif ->
+                                        DropdownMenuItem(
+                                            text = { Text("${notif.providerType.displayName} (${notif.displayIdentifier})") },
+                                            leadingIcon = {
+                                                Checkbox(
+                                                    checked = notif.id in selectedNotificationIds,
+                                                    onCheckedChange = null
+                                                )
+                                            },
+                                            onClick = {
+                                                selectedNotificationIds = if (notif.id in selectedNotificationIds) {
+                                                    selectedNotificationIds - notif.id
+                                                } else {
+                                                    selectedNotificationIds + notif.id
+                                                }
+                                                // Don't close the dropdown on click to allow multiple selections
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // ── Actions ──────────────────────────────────────────────────
+                val urlValid = isWebhookTargetValid(editUrl, editDeliveryFormat)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            testLoading = true
+                            val testConfig = WebhookConfig(
+                                url = editUrl.trim(),
+                                headers = currentHeaders,
+                                isEnabled = true,
+                                deliveryFormat = editDeliveryFormat
+                            )
+                            val typesForMock = if (filterAll) globalEnabledTypes else selectedTypes
+                            scope.launch {
+                                val result = withContext(Dispatchers.IO) {
+                                    when (editDeliveryFormat) {
+                                        WebhookDeliveryFormat.JSON -> {
+                                            val mockPayload = MockPayloadBuilder.build(typesForMock.ifEmpty { null }, appVersion)
+                                            WebhookManager(
+                                                webhookConfigs = listOf(testConfig),
+                                                context = context,
+                                                syncType = "test",
+                                                payload = mockPayload
+                                            ).postData(mockPayload)
+                                        }
+                                        WebhookDeliveryFormat.GRPC -> {
+                                            val mockData = MockPayloadBuilder.buildHealthData(
+                                                typesForMock.ifEmpty { null }
+                                            )
+                                            val payload = ProtobufPayloadBuilder.build(mockData, appVersion)
+                                            val logJson = MockPayloadBuilder.build(
+                                                typesForMock.ifEmpty { null },
+                                                appVersion
+                                            )
+                                            GrpcWebhookClient.deliver(
+                                                config = testConfig,
+                                                payload = payload,
+                                                context = context,
+                                                syncType = "test",
+                                                recordCount = mockData.totalRecordCount(),
+                                                logPayload = logJson
+                                            )
+                                        }
+                                    }
+                                }
+                                val log = withContext(Dispatchers.IO) {
+                                    preferencesManager.getWebhookLogs()
+                                        .firstOrNull { it.syncType == "test" && it.url == testConfig.url }
+                                }
+                                testLoading = false
+                                val detail = buildString {
+                                    val code = log?.statusCode
+                                    val ms = log?.responseTimeMs
+                                    val err = log?.errorMessage ?: result.exceptionOrNull()?.message
+                                    if (code != null) append("$code")
+                                    if (ms != null) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append("${ms}ms")
+                                    }
+                                    if (!err.isNullOrBlank()) {
+                                        if (isNotEmpty()) append(" · ")
+                                        append(err)
+                                    }
+                                    if (isEmpty()) append("Failed")
+                                }
+                                if (result.isSuccess) {
+                                    Toast.makeText(context, context.getString(R.string.webhooks_test_success, detail), Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, context.getString(R.string.webhooks_test_failed, detail), Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        enabled = !testLoading && urlValid,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (testLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(stringResource(R.string.webhooks_action_test))
+                    }
+
+                    Button(
+                        onClick = {
+                            val trimmedUrl = editUrl.trim()
+                            if (!isWebhookTargetValid(trimmedUrl, editDeliveryFormat)) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        if (editDeliveryFormat == WebhookDeliveryFormat.GRPC)
+                                            R.string.webhooks_toast_invalid_target
+                                        else
+                                            R.string.webhooks_toast_invalid_url
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                return@Button
+                            }
+                            val newFilter = if (filterAll) null else selectedTypes.ifEmpty { null }
+                            val list = webhookConfigs.toMutableList()
+                            list[capturedIndex] = webhookConfigs[capturedIndex].copy(
+                                name = editName.trim(),
+                                url = trimmedUrl,
+                                headers = currentHeaders,
+                                dataTypeFilter = newFilter,
+                                notificationConfigIds = selectedNotificationIds,
+                                deliveryFormat = editDeliveryFormat
+                            )
+                            webhookConfigs = list
+                            sheetIndex = -1
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.action_save))
+                    }
+                }
+
+                // ── Duplicate ─────────────────────────────────────────────────
+                TextButton(
+                    onClick = {
+                        val duplicate = config.copy(
+                            url = config.url,
+                            name = if (config.name.isNotBlank()) "${config.name} (copy)" else "",
+                            isEnabled = false
+                        )
+                        webhookConfigs = webhookConfigs + duplicate
+                        sheetIndex = -1
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Duplicate webhook", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                // ── Delete ────────────────────────────────────────────────────
+                if (showDeleteConfirm) {
+                    Button(
+                        onClick = {
+                            webhookConfigs = webhookConfigs.toMutableList().apply { removeAt(capturedIndex) }
+                            sheetIndex = -1
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Filled.Delete, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.webhooks_delete_title))
+                    }
+                } else {
+                    TextButton(
+                        onClick = { showDeleteConfirm = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.action_delete))
+                    }
+                }
+            }
+        }
+
+        if (showUnlinkConfirm && orphanedIds.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { showUnlinkConfirm = false },
+                title = { Text("Unlink Provider") },
+                text = {
+                    Text("${orphanedIds.size} linked notification provider(s) no longer exist. Remove the link?")
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        selectedNotificationIds = selectedNotificationIds - orphanedIds
+                        showUnlinkConfirm = false
+                    }) { Text("Unlink") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showUnlinkConfirm = false }) { Text("Keep") }
+                }
+            )
+        }
+    }
+
+    // ── Main List ─────────────────────────────────────────────────────────────
+    Scaffold(contentWindowInsets = WindowInsets(0.dp)) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // ── NOVA Health Connection Card ──────────────────────────────────────
+            Card {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "NOVA Health",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Connect this Health Connect sync app to your NOVA account.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(
+                        onClick = { showNovaDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Connect to NOVA")
+                    }
+                }
+            }
+
+            Card {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.webhooks_section_title),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (webhookConfigs.isEmpty()) {
+                        Text(
+                            stringResource(R.string.webhooks_empty_desc),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    webhookConfigs.forEachIndexed { index, config ->
+                        Column {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    val baseAlpha = if (config.isEnabled) 1f else 0.4f
+                                    if (config.name.isNotBlank()) {
+                                        Text(
+                                            text = config.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = baseAlpha)
+                                        )
+                                    }
+                                    Text(
+                                        text = config.url,
+                                        style = if (config.name.isNotBlank()) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (config.name.isNotBlank())
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = baseAlpha)
+                                        else
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = baseAlpha)
+                                    )
+                                    val meta = buildList {
+                                        val h = config.getHeaderCount()
+                                        val f = config.dataTypeFilter?.size
+                                        if (config.deliveryFormat == WebhookDeliveryFormat.GRPC) {
+                                            add(stringResource(R.string.webhooks_delivery_grpc))
+                                        }
+                                        if (h > 0) add(stringResource(R.string.webhooks_headers_count, h))
+                                        if (f != null) add(stringResource(R.string.webhooks_data_types_filter_count, f))
+                                    }.joinToString(" · ")
+                                    if (meta.isNotEmpty()) {
+                                        Text(
+                                            text = meta,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary.copy(
+                                                alpha = if (config.isEnabled) 1f else 0.4f
+                                            )
+                                        )
+                                    }
+                                }
+
+                                Box(modifier = Modifier.graphicsLayer(scaleX = 0.75f, scaleY = 0.75f)) {
+                                    Switch(
+                                        checked = config.isEnabled,
+                                        onCheckedChange = { enabled ->
+                                            val updated = webhookConfigs.toMutableList()
+                                            updated[index] = config.copy(isEnabled = enabled)
+                                            webhookConfigs = updated
+                                        }
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { sheetIndex = index },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Edit,
+                                        contentDescription = stringResource(R.string.webhooks_action_edit_headers),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = newUrl,
+                        onValueChange = { newUrl = it },
+                        label = { Text(stringResource(R.string.webhooks_new_url_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (newUrl.isNotBlank() && (newUrl.startsWith("http://") || newUrl.startsWith("https://"))) {
+                                webhookConfigs = webhookConfigs + WebhookConfig.fromUrl(newUrl)
+                                newUrl = ""
+                            } else {
+                                Toast.makeText(context, context.getString(R.string.webhooks_toast_invalid_url), Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.webhooks_action_add))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetSection(content: @Composable () -> Unit) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(modifier = Modifier.padding(16.dp)) {
+            content()
+        }
+    }
+}
+
+private fun isWebhookTargetValid(raw: String, format: WebhookDeliveryFormat): Boolean {
+    val trimmed = raw.trim()
+    if (trimmed.isEmpty()) return false
+    return when (format) {
+        WebhookDeliveryFormat.JSON ->
+            trimmed.startsWith("http://") || trimmed.startsWith("https://")
+        WebhookDeliveryFormat.GRPC ->
+            GrpcWebhookClient.isValidTarget(trimmed)
+    }
+}
