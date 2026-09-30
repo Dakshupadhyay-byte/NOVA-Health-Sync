@@ -52,10 +52,45 @@ fun WebhooksScreen(onOpenNotificationsSettings: () -> Unit = {}) {
     val showSheet = sheetIndex >= 0 && sheetIndex in webhookConfigs.indices
 
     var showNovaDialog by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
     var novaToken by remember { mutableStateOf("") }
+
+    val isNovaConnected = remember(webhookConfigs) {
+        webhookConfigs.any { config ->
+            config.isEnabled && (config.url == NovaPairingService.NOVA_WEBHOOK_URL || config.name.equals("NOVA", ignoreCase = true))
+        }
+    }
 
     LaunchedEffect(webhookConfigs) {
         preferencesManager.setWebhookConfigs(webhookConfigs)
+    }
+
+    // ── NOVA QR Scanner Dialog ───────────────────────────────────────────────
+    if (showQrScanner) {
+        com.hcwebhook.app.components.NovaQrScannerDialog(
+            onDismissRequest = { showQrScanner = false },
+            onPairingSuccess = { token ->
+                val newConfig = WebhookConfig(
+                    url = NovaPairingService.NOVA_WEBHOOK_URL,
+                    name = "NOVA",
+                    headers = mapOf(
+                        "Authorization" to "Bearer $token"
+                    ),
+                    isEnabled = true,
+                    dataTypeFilter = null,
+                    deliveryFormat = WebhookDeliveryFormat.JSON
+                )
+                val filteredConfigs = webhookConfigs.filterNot { config ->
+                    config.url == NovaPairingService.NOVA_WEBHOOK_URL ||
+                    config.name.equals("NOVA", ignoreCase = true)
+                }
+                val updatedConfigs = filteredConfigs + newConfig
+                webhookConfigs = updatedConfigs
+                preferencesManager.setWebhookConfigs(updatedConfigs)
+                showQrScanner = false
+                Toast.makeText(context, "NOVA connected successfully", Toast.LENGTH_SHORT).show()
+            }
+        )
     }
 
     // ── NOVA Connection Dialog ───────────────────────────────────────────────
@@ -833,23 +868,72 @@ fun WebhooksScreen(onOpenNotificationsSettings: () -> Unit = {}) {
             // ── NOVA Health Connection Card ──────────────────────────────────────
             Card {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "NOVA Health",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Connect this Health Connect sync app to your NOVA account.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Button(
-                        onClick = { showNovaDialog = true },
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Connect to NOVA")
+                        Text(
+                            "NOVA Health",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isNovaConnected) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = MaterialTheme.shapes.small
+                            ) {
+                                Text(
+                                    text = "Connected ✓",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    if (isNovaConnected) {
+                        Text(
+                            "Your Health Connect sync is active and connected to NOVA.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { showQrScanner = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Scan New QR")
+                        }
+                    } else {
+                        Text(
+                            "Connect this Health Connect app to your NOVA account.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { showQrScanner = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Scan QR Code")
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextButton(
+                        onClick = { showNovaDialog = true },
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        Text(
+                            "Enter token manually",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
