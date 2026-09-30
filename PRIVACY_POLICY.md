@@ -1,7 +1,7 @@
 # Privacy Policy
 
 **NOVA Health Sync**
-_Last updated: June 27, 2026_
+_Last updated: September 30, 2026_
 
 ## Overview
 
